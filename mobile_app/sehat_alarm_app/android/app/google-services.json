@@ -1,0 +1,68 @@
+{
+  "project_info": {
+    "project_number": "447364080749",
+    "project_id": "sehat-alarm",
+    "storage_bucket": "sehat-alarm.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:447364080749:android:402b1f8c82446c59744b64",
+        "android_client_info": {
+          "package_name": "com.sehat_alarm.com"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "447364080749-3volqnghilkk384vhfhlsv6f2scvt052.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDfQmHuzToYFccs9dNtvNgWVPNUspNkin4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "447364080749-3volqnghilkk384vhfhlsv6f2scvt052.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:447364080749:android:6dea2e98521789a9744b64",
+        "android_client_info": {
+          "package_name": "com.sehatalarm.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "447364080749-3volqnghilkk384vhfhlsv6f2scvt052.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDfQmHuzToYFccs9dNtvNgWVPNUspNkin4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "447364080749-3volqnghilkk384vhfhlsv6f2scvt052.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
