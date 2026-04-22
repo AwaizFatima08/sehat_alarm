@@ -1,10 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:sehat_alarm_app/core/constants/firestore_constants.dart';
 import 'package:sehat_alarm_app/models/dose_event_model.dart';
 import 'package:sehat_alarm_app/models/schedule_entry_model.dart';
+import 'package:sehat_alarm_app/services/medicine_service.dart';
 
 class DoseEventService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final MedicineService _medicineService = MedicineService();
 
   CollectionReference<Map<String, dynamic>> get _eventCollection =>
       _firestore.collection(FirestoreConstants.doseEventLog);
@@ -12,9 +15,36 @@ class DoseEventService {
   Future<void> generateTodayEvents({
     required List<ScheduleEntryModel> schedules,
   }) async {
+    final stopwatch = Stopwatch()..start();
+
     final now = DateTime.now();
     final startOfDay = DateTime(now.year, now.month, now.day);
     final endOfDay = startOfDay.add(const Duration(days: 1));
+
+    final existingSnapshot = await _eventCollection
+        .where(
+          'scheduled_datetime',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay),
+        )
+        .where(
+          'scheduled_datetime',
+          isLessThan: Timestamp.fromDate(endOfDay),
+        )
+        .get();
+
+    final existingKeys = existingSnapshot.docs
+        .map(DoseEventModel.fromFirestore)
+        .map((event) {
+          final ms = event.scheduledDateTime?.millisecondsSinceEpoch ?? 0;
+          return '${event.scheduleId}_$ms';
+        })
+        .toSet();
+
+    final medicineIds = schedules.map((s) => s.medicineId).toSet().toList();
+    final medicineMap = await _medicineService.getMedicinesByIds(medicineIds);
+
+    final batch = _firestore.batch();
+    int addedCount = 0;
 
     for (final schedule in schedules) {
       if (!schedule.isEnabled) continue;
@@ -24,20 +54,28 @@ class DoseEventService {
           _buildScheduledDateTimeForToday(schedule.timeOfDay, now);
       if (scheduledDateTime == null) continue;
 
-      final existing = await _eventCollection
-          .where('schedule_id', isEqualTo: schedule.id)
-          .where(
-            'scheduled_datetime',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay),
-          )
-          .where(
-            'scheduled_datetime',
-            isLessThan: Timestamp.fromDate(endOfDay),
-          )
-          .limit(1)
-          .get();
+      final key = '${schedule.id}_${scheduledDateTime.millisecondsSinceEpoch}';
+      if (existingKeys.contains(key)) continue;
 
-      if (existing.docs.isNotEmpty) continue;
+      final medicine = medicineMap[schedule.medicineId];
+
+      final medicineName = (medicine?.name ?? 'Medicine').trim();
+      final doseLabel = (medicine?.doseLabel ?? '').trim();
+      final instructions = (medicine?.instructions ?? '').trim();
+
+      final quantityPerDose =
+          schedule.quantityPerDose ?? medicine?.quantityPerDose;
+
+      final quantityUnit =
+          (schedule.quantityUnit ?? medicine?.quantityUnit ?? '').trim();
+
+      final slotLabel = (schedule.slotLabel ?? '').trim();
+
+      final announcementLanguage =
+          (schedule.announcementLanguage ??
+                  medicine?.announcementLanguage ??
+                  'english')
+              .trim();
 
       final event = DoseEventModel(
         id: '',
@@ -48,12 +86,35 @@ class DoseEventService {
         responseDateTime: null,
         snoozeUntil: null,
         remarks: '',
+        medicineNameSnapshot: medicineName,
+        doseLabelSnapshot: doseLabel,
+        instructionsSnapshot: instructions,
+        quantityPerDoseSnapshot: quantityPerDose,
+        quantityUnitSnapshot: quantityUnit,
+        slotLabelSnapshot: slotLabel,
+        announcementLanguageSnapshot: announcementLanguage,
+        alarmType: 'medicine',
         createdAt: null,
         updatedAt: null,
       );
 
-      await _eventCollection.add(event.toMap());
+      final docRef = _eventCollection.doc();
+      batch.set(docRef, event.toMap());
+
+      existingKeys.add(key);
+      addedCount++;
     }
+
+    if (addedCount > 0) {
+      await batch.commit();
+    }
+
+    stopwatch.stop();
+    debugPrint(
+      'DoseEventService.generateTodayEvents scanned ${schedules.length} '
+      'schedules, added $addedCount events in '
+      '${stopwatch.elapsedMilliseconds} ms',
+    );
   }
 
   Stream<List<DoseEventModel>> getTodayEvents() {
@@ -103,6 +164,15 @@ class DoseEventService {
     return DoseEventModel.fromFirestore(doc);
   }
 
+  Future<void> markEventAsRinging({
+    required String eventId,
+  }) async {
+    await _eventCollection.doc(eventId).update({
+      'status': 'ringing',
+      'updated_at': FieldValue.serverTimestamp(),
+    });
+  }
+
   Future<void> updateStatus({
     required String eventId,
     required String status,
@@ -117,7 +187,7 @@ class DoseEventService {
 
   Future<void> snoozeEvent({
     required String eventId,
-    int minutes = 10,
+    required int minutes,
   }) async {
     final snoozeUntil = DateTime.now().add(Duration(minutes: minutes));
 
@@ -126,6 +196,62 @@ class DoseEventService {
       'snooze_until': Timestamp.fromDate(snoozeUntil),
       'updated_at': FieldValue.serverTimestamp(),
     });
+  }
+
+  Future<int> markTodayMissedEvents({
+    int graceMinutes = 30,
+  }) async {
+    final now = DateTime.now();
+    final cutoff = now.subtract(Duration(minutes: graceMinutes));
+
+    final startOfDay = DateTime(now.year, now.month, now.day);
+    final endOfDay = startOfDay.add(const Duration(days: 1));
+
+    final snapshot = await _eventCollection
+        .where(
+          'scheduled_datetime',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay),
+        )
+        .where(
+          'scheduled_datetime',
+          isLessThan: Timestamp.fromDate(endOfDay),
+        )
+        .get();
+
+    final candidates = snapshot.docs
+        .map(DoseEventModel.fromFirestore)
+        .where((event) {
+          if (!event.isAlarmActive) return false;
+
+          final effectiveTime = event.snoozeUntil ?? event.scheduledDateTime;
+          if (effectiveTime == null) return false;
+
+          return effectiveTime.isBefore(cutoff);
+        })
+        .toList();
+
+    if (candidates.isEmpty) return 0;
+
+    final batch = _firestore.batch();
+
+    for (final event in candidates) {
+      batch.update(_eventCollection.doc(event.id), {
+        'status': 'missed',
+        'response_datetime': FieldValue.serverTimestamp(),
+        'snooze_until': null,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
+    return candidates.length;
+  }
+
+  Future<List<DoseEventModel>> refreshTodayEventStates({
+    int graceMinutes = 30,
+  }) async {
+    await markTodayMissedEvents(graceMinutes: graceMinutes);
+    return fetchTodayEventsOnce();
   }
 
   bool _shouldGenerateForToday(

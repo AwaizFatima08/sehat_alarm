@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:sehat_alarm_app/models/dose_event_model.dart';
+import 'package:sehat_alarm_app/services/app_settings_service.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -42,6 +44,7 @@ class NotificationService {
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
+  final AppSettingsService _appSettingsService = AppSettingsService();
 
   final StreamController<AlarmNavigationPayload> _alarmNavigationController =
       StreamController<AlarmNavigationPayload>.broadcast();
@@ -57,7 +60,7 @@ class NotificationService {
   Future<AlarmNavigationPayload?> initialize() async {
     await _configureLocalTimeZone();
 
-    const androidSettings = AndroidInitializationSettings('ic_launcher');
+    const androidSettings = AndroidInitializationSettings('app_icon');
     const settings = InitializationSettings(android: androidSettings);
 
     await _plugin.initialize(
@@ -89,16 +92,31 @@ class NotificationService {
   }
 
   Future<void> syncNotificationsForEvents(List<DoseEventModel> events) async {
+    final stopwatch = Stopwatch()..start();
+
+    final futures = <Future<void>>[];
     for (final event in events) {
-      await cancelNotificationForEvent(event.id);
-
-      final scheduleAt = event.snoozeUntil ?? event.scheduledDateTime;
-      if (scheduleAt == null) continue;
-      if (event.status != 'pending' && event.status != 'snoozed') continue;
-      if (!scheduleAt.isAfter(DateTime.now())) continue;
-
-      await scheduleDoseEventNotification(event: event);
+      futures.add(_processEvent(event));
     }
+
+    await Future.wait(futures);
+
+    stopwatch.stop();
+    debugPrint(
+      'NotificationService.syncNotificationsForEvents processed '
+      '${events.length} events in ${stopwatch.elapsedMilliseconds} ms',
+    );
+  }
+
+  Future<void> _processEvent(DoseEventModel event) async {
+    await cancelNotificationForEvent(event.id);
+
+    final scheduleAt = event.snoozeUntil ?? event.scheduledDateTime;
+    if (scheduleAt == null) return;
+    if (!event.isAlarmActive) return;
+    if (!scheduleAt.isAfter(DateTime.now())) return;
+
+    await scheduleDoseEventNotification(event: event);
   }
 
   Future<void> scheduleDoseEventNotification({
@@ -107,7 +125,9 @@ class NotificationService {
   }) async {
     final scheduleAt = event.snoozeUntil ?? event.scheduledDateTime;
     if (scheduleAt == null) return;
+    if (!event.isAlarmActive) return;
 
+    final settings = await _appSettingsService.getSettings();
     final zonedTime = tz.TZDateTime.from(scheduleAt, tz.local);
 
     final androidDetails = AndroidNotificationDetails(
@@ -118,7 +138,7 @@ class NotificationService {
       priority: Priority.max,
       category: AndroidNotificationCategory.alarm,
       playSound: true,
-      enableVibration: true,
+      enableVibration: settings.vibrationEnabled,
       ticker: 'Sehat Alarm',
       ongoing: true,
       autoCancel: false,
@@ -135,7 +155,7 @@ class NotificationService {
     await _plugin.zonedSchedule(
       _notificationIdForEvent(event.id),
       medicineName ?? 'Medicine Reminder',
-      'It is time to take your medicine now.',
+      _notificationBodyForEvent(event),
       zonedTime,
       NotificationDetails(android: androidDetails),
       payload: payload,
@@ -170,6 +190,33 @@ class NotificationService {
     } catch (_) {
       return null;
     }
+  }
+
+  String _notificationBodyForEvent(DoseEventModel event) {
+    final quantity = event.quantityPerDoseSnapshot;
+    final unit = event.quantityUnitSnapshot.trim();
+    final slot = event.slotLabelSnapshot.trim();
+
+    final parts = <String>[];
+
+    if (quantity != null) {
+      final quantityText = quantity == quantity.roundToDouble()
+          ? quantity.toInt().toString()
+          : quantity.toString();
+      parts.add(
+        unit.isEmpty ? quantityText : '$quantityText $unit',
+      );
+    }
+
+    if (slot.isNotEmpty) {
+      parts.add(slot);
+    }
+
+    if (parts.isEmpty) {
+      return 'It is time to take your medicine now.';
+    }
+
+    return 'It is time to take your medicine now. ${parts.join(' • ')}';
   }
 
   Future<void> _configureLocalTimeZone() async {

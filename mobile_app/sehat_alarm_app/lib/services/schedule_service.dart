@@ -25,6 +25,12 @@ class ScheduleService {
     required String timeOfDay,
     required String repeatType,
     required List<String> daysOfWeek,
+    String? regimenGroupId,
+    String? slotLabel,
+    double? quantityPerDose,
+    String? quantityUnit,
+    String? announcementLanguage,
+    int? sortOrder,
   }) async {
     final model = ScheduleEntryModel(
       id: '',
@@ -32,12 +38,33 @@ class ScheduleService {
       timeOfDay: timeOfDay,
       repeatType: repeatType,
       daysOfWeek: daysOfWeek,
+      regimenGroupId: regimenGroupId,
+      slotLabel: slotLabel,
+      quantityPerDose: quantityPerDose,
+      quantityUnit: quantityUnit,
+      announcementLanguage: announcementLanguage,
+      sortOrder: sortOrder,
       isEnabled: true,
       createdAt: null,
       updatedAt: null,
     );
 
     await scheduleCollection.add(model.toMap());
+  }
+
+  Future<void> addSchedulesBatch({
+    required List<ScheduleEntryModel> schedules,
+  }) async {
+    if (schedules.isEmpty) return;
+
+    final batch = _firestore.batch();
+
+    for (final schedule in schedules) {
+      final docRef = scheduleCollection.doc();
+      batch.set(docRef, schedule.toMap());
+    }
+
+    await batch.commit();
   }
 
   Future<void> updateScheduleStatus({
@@ -48,5 +75,81 @@ class ScheduleService {
       'is_enabled': isEnabled,
       'updated_at': FieldValue.serverTimestamp(),
     });
+  }
+
+  // 🔥 NEW — full edit
+  Future<void> updateScheduleEntry({
+    required String scheduleId,
+    required String timeOfDay,
+    required String repeatType,
+    required List<String> daysOfWeek,
+    String? slotLabel,
+    double? quantityPerDose,
+    String? quantityUnit,
+    String? announcementLanguage,
+  }) async {
+    await scheduleCollection.doc(scheduleId).update({
+      'time_of_day': timeOfDay,
+      'repeat_type': repeatType,
+      'days_of_week': daysOfWeek,
+      'slot_label': slotLabel,
+      'quantity_per_dose': quantityPerDose,
+      'quantity_unit': quantityUnit,
+      'announcement_language': announcementLanguage,
+      'updated_at': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // 🔥 NEW — delete single row
+  Future<void> deleteScheduleEntry(String scheduleId) async {
+    await scheduleCollection.doc(scheduleId).delete();
+  }
+
+  // 🔥 NEW — delete full regimen
+  Future<void> deleteRegimenGroup(String regimenGroupId) async {
+    final snapshot = await scheduleCollection
+        .where('regimen_group_id', isEqualTo: regimenGroupId)
+        .get();
+
+    final batch = _firestore.batch();
+
+    for (final doc in snapshot.docs) {
+      batch.delete(doc.reference);
+    }
+
+    await batch.commit();
+  }
+
+  Future<List<ScheduleEntryModel>> fetchEnabledSchedules() async {
+    final snapshot = await scheduleCollection
+        .where('is_enabled', isEqualTo: true)
+        .get();
+
+    return snapshot.docs
+        .map((doc) => ScheduleEntryModel.fromFirestore(doc))
+        .toList();
+  }
+
+  Future<Map<String, ScheduleEntryModel>> getSchedulesByIds(
+    Iterable<String> scheduleIds,
+  ) async {
+    final ids = scheduleIds.where((id) => id.trim().isNotEmpty).toSet().toList();
+    if (ids.isEmpty) return {};
+
+    final Map<String, ScheduleEntryModel> result = {};
+
+    for (int i = 0; i < ids.length; i += 10) {
+      final chunk = ids.skip(i).take(10).toList();
+
+      final snapshot = await scheduleCollection
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+
+      for (final doc in snapshot.docs) {
+        result[doc.id] = ScheduleEntryModel.fromFirestore(doc);
+      }
+    }
+
+    return result;
   }
 }

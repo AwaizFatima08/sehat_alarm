@@ -21,16 +21,30 @@ class MedicineService {
     required String name,
     required String doseLabel,
     required String instructions,
+    String? dosageForm,
+    double? quantityPerDose,
+    String? quantityUnit,
+    String? defaultFrequencyLabel,
+    String? regimenNote,
+    String? announcementLanguage,
+    bool? announcementBilingual,
   }) async {
     final model = MedicineModel(
       id: '',
       name: name.trim(),
       doseLabel: doseLabel.trim(),
       instructions: instructions.trim(),
+      dosageForm: _normalizeString(dosageForm),
+      quantityPerDose: quantityPerDose,
+      quantityUnit: _normalizeString(quantityUnit),
+      defaultFrequencyLabel: _normalizeString(defaultFrequencyLabel),
+      regimenNote: _normalizeString(regimenNote),
+      announcementLanguage: announcementLanguage ?? 'english',
+      announcementBilingual: announcementBilingual ?? false,
       startDate: null,
       endDate: null,
       isActive: true,
-      languageMode: 'english',
+      languageMode: announcementLanguage ?? 'english',
       reminderSound: 'default',
       notes: '',
       createdAt: null,
@@ -54,5 +68,34 @@ class MedicineService {
     final doc = await _medicineCollection.doc(medicineId).get();
     if (!doc.exists) return null;
     return MedicineModel.fromFirestore(doc);
+  }
+
+  Future<Map<String, MedicineModel>> getMedicinesByIds(
+    Iterable<String> medicineIds,
+  ) async {
+    final ids = medicineIds.where((id) => id.trim().isNotEmpty).toSet().toList();
+    if (ids.isEmpty) return {};
+
+    final Map<String, MedicineModel> result = {};
+
+    for (int i = 0; i < ids.length; i += 10) {
+      final chunk = ids.skip(i).take(10).toList();
+
+      final snapshot = await _medicineCollection
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+
+      for (final doc in snapshot.docs) {
+        result[doc.id] = MedicineModel.fromFirestore(doc);
+      }
+    }
+
+    return result;
+  }
+
+  String? _normalizeString(String? value) {
+    if (value == null) return null;
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
   }
 }
