@@ -102,26 +102,26 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
               : existing.slotLabel!.trim();
           _quantityController.text =
               existing.quantityPerDose?.toString() ??
-              medicine?.quantityPerDose?.toString() ??
-              '';
+                  medicine?.quantityPerDose?.toString() ??
+                  '';
           _selectedQuantityUnit =
               (existing.quantityUnit ?? medicine?.quantityUnit ?? 'tablet')
-                  .trim()
-                  .isEmpty
-              ? 'tablet'
-              : (existing.quantityUnit ?? medicine?.quantityUnit ?? 'tablet')
-                    .trim();
+                      .trim()
+                      .isEmpty
+                  ? 'tablet'
+                  : (existing.quantityUnit ?? medicine?.quantityUnit ?? 'tablet')
+                      .trim();
           _selectedAnnouncementLanguage =
               (existing.announcementLanguage ??
-                      medicine?.announcementLanguage ??
-                      'english')
-                  .trim()
-                  .isEmpty
-              ? 'english'
-              : (existing.announcementLanguage ??
-                      medicine?.announcementLanguage ??
-                      'english')
-                    .trim();
+                          medicine?.announcementLanguage ??
+                          'english')
+                      .trim()
+                      .isEmpty
+                  ? 'english'
+                  : (existing.announcementLanguage ??
+                          medicine?.announcementLanguage ??
+                          'english')
+                      .trim();
           _isEnabled = existing.isEnabled;
 
           for (final key in _days.keys) {
@@ -130,13 +130,18 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
         } else {
           _regimenMode = medicine?.defaultFrequencyLabel ?? 'once_daily';
           _quantityController.text = medicine?.quantityPerDose?.toString() ?? '';
-          _selectedQuantityUnit = (medicine?.quantityUnit ?? 'tablet').trim().isEmpty
-              ? 'tablet'
-              : medicine!.quantityUnit!.trim();
+          _selectedQuantityUnit =
+              (medicine?.quantityUnit ?? 'tablet').trim().isEmpty
+                  ? 'tablet'
+                  : medicine!.quantityUnit!.trim();
           _selectedAnnouncementLanguage =
               (medicine?.announcementLanguage ?? 'english').trim().isEmpty
-              ? 'english'
-              : medicine!.announcementLanguage!.trim();
+                  ? 'english'
+                  : medicine!.announcementLanguage!.trim();
+
+          if (_regimenMode == 'custom') {
+            _selectedTime ??= TimeOfDay.now();
+          }
         }
 
         _loadingMedicine = false;
@@ -165,7 +170,7 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
 
     final picked = await showTimePicker(
       context: context,
-      initialTime: _selectedTime ?? TimeOfDay.now(),
+      initialTime: _selectedTime ?? const TimeOfDay(hour: 8, minute: 0),
     );
 
     if (picked != null) {
@@ -188,6 +193,95 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
         .toList();
   }
 
+  String _friendlyRepeatType() {
+    return _repeatType == 'daily' ? 'Daily' : 'Selected days';
+  }
+
+  String _friendlyDaysSummary() {
+    final days = _selectedDays();
+    if (_repeatType == 'daily') return 'Every day';
+    if (days.isEmpty) return 'No days selected';
+
+    const labels = {
+      'mon': 'Mon',
+      'tue': 'Tue',
+      'wed': 'Wed',
+      'thu': 'Thu',
+      'fri': 'Fri',
+      'sat': 'Sat',
+      'sun': 'Sun',
+    };
+
+    return days.map((day) => labels[day] ?? day).join(', ');
+  }
+
+  String _friendlyRegimenMode() {
+    switch (_regimenMode) {
+      case 'once_daily':
+        return 'Once daily';
+      case 'twice_daily':
+        return 'Twice daily';
+      case 'thrice_daily':
+        return 'Thrice daily';
+      case 'custom':
+        return 'Custom';
+      default:
+        return _regimenMode;
+    }
+  }
+
+  String _summaryText() {
+    if (widget.isEditMode) {
+      final timeText = _selectedTime == null
+          ? 'No time selected'
+          : _selectedTime!.format(context);
+      final quantity = _quantityController.text.trim();
+      final quantityText = quantity.isEmpty
+          ? 'No quantity entered'
+          : '$quantity $_selectedQuantityUnit';
+
+      return 'You are updating one schedule row.\n'
+          'Time: $timeText\n'
+          'Repeat: ${_friendlyRepeatType()}\n'
+          'Days: ${_friendlyDaysSummary()}\n'
+          'Slot: ${_titleCase(_slotLabel)}\n'
+          'Dose: $quantityText\n'
+          'Language: ${_titleCase(_selectedAnnouncementLanguage)}\n'
+          'Status: ${_isEnabled ? 'Enabled' : 'Disabled'}';
+    }
+
+    switch (_regimenMode) {
+      case 'twice_daily':
+        return 'You are creating a twice-daily regimen.\n'
+            'Rows: 2\n'
+            'Times: 08:00 morning, 20:00 night\n'
+            'Repeat: ${_friendlyRepeatType()}\n'
+            'Days: ${_friendlyDaysSummary()}';
+      case 'thrice_daily':
+        return 'You are creating a thrice-daily regimen.\n'
+            'Rows: 3\n'
+            'Times: 08:00 morning, 14:00 afternoon, 20:00 night\n'
+            'Repeat: ${_friendlyRepeatType()}\n'
+            'Days: ${_friendlyDaysSummary()}';
+      case 'custom':
+        final timeText = _selectedTime == null
+            ? 'No custom time selected'
+            : _selectedTime!.format(context);
+        return 'You are creating a custom schedule.\n'
+            'Rows: 1\n'
+            'Time: $timeText\n'
+            'Repeat: ${_friendlyRepeatType()}\n'
+            'Days: ${_friendlyDaysSummary()}';
+      case 'once_daily':
+      default:
+        return 'You are creating a once-daily regimen.\n'
+            'Rows: 1\n'
+            'Time: 08:00 morning\n'
+            'Repeat: ${_friendlyRepeatType()}\n'
+            'Days: ${_friendlyDaysSummary()}';
+    }
+  }
+
   Future<void> _saveSchedule() async {
     if (_isSaving) return;
 
@@ -200,7 +294,16 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
       return;
     }
 
-    if (_selectedTime == null) {
+    if (widget.isEditMode && _selectedTime == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a reminder time')),
+      );
+      return;
+    }
+
+    if (!widget.isEditMode &&
+        _regimenMode == 'custom' &&
+        _selectedTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a reminder time')),
       );
@@ -217,8 +320,6 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
 
     final quantityPerDose =
         quantityText.isEmpty ? null : double.tryParse(quantityText);
-
-    final stopwatch = Stopwatch()..start();
 
     setState(() {
       _isSaving = true;
@@ -258,8 +359,6 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
         await _scheduleService.addSchedulesBatch(schedules: schedules);
       }
 
-      stopwatch.stop();
-
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -274,8 +373,6 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
 
       Navigator.of(context).pop();
     } catch (e) {
-      stopwatch.stop();
-
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -295,8 +392,9 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
     required List<String> repeatDays,
   }) {
     final quantityText = _quantityController.text.trim();
-    final quantityPerDose =
-        quantityText.isEmpty ? _medicine?.quantityPerDose : double.tryParse(quantityText);
+    final quantityPerDose = quantityText.isEmpty
+        ? _medicine?.quantityPerDose
+        : double.tryParse(quantityText);
 
     List<_RegimenSlot> slots;
 
@@ -418,9 +516,6 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                   if (!selected) return;
                   setState(() {
                     _regimenMode = 'once_daily';
-                    if (_regimenMode != 'custom') {
-                      _selectedTime = const TimeOfDay(hour: 8, minute: 0);
-                    }
                   });
                 },
         ),
@@ -457,28 +552,12 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                   if (!selected) return;
                   setState(() {
                     _regimenMode = 'custom';
+                    _selectedTime ??= TimeOfDay.now();
                   });
                 },
         ),
       ],
     );
-  }
-
-  String _regimenSummaryText() {
-    switch (_regimenMode) {
-      case 'twice_daily':
-        return 'This will create 2 schedule rows: 08:00 morning and 20:00 night.';
-      case 'thrice_daily':
-        return 'This will create 3 schedule rows: 08:00 morning, 14:00 afternoon, and 20:00 night.';
-      case 'custom':
-        final timeText = _selectedTime == null
-            ? 'No custom time selected yet.'
-            : 'This will create 1 schedule row at ${_selectedTime!.format(context)}.';
-        return timeText;
-      case 'once_daily':
-      default:
-        return 'This will create 1 schedule row at 08:00 morning.';
-    }
   }
 
   @override
@@ -500,222 +579,202 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      widget.medicineName,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
+                    _HeroHeader(
+                      title: widget.medicineName,
+                      subtitle: widget.isEditMode
+                          ? 'Update one schedule row safely without changing the rest of the regimen.'
+                          : 'Create a clear reminder schedule for this medicine.',
+                      doseLabel: (_medicine?.doseLabel ?? '').trim(),
+                    ),
+                    const SizedBox(height: 18),
+                    _SectionCard(
+                      title: 'Summary',
+                      child: _SummaryPanel(
+                        text: _summaryText(),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    if ((_medicine?.doseLabel ?? '').trim().isNotEmpty)
-                      Text(
-                        _medicine!.doseLabel,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 16),
 
                     if (!widget.isEditMode) ...[
-                      const Text(
-                        'Regimen Helper',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
+                      _SectionCard(
+                        title: 'Regimen',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildRegimenSelector(),
+                            const SizedBox(height: 14),
+                            _InfoPanel(
+                              title: 'Current Selection',
+                              body: _friendlyRegimenMode(),
+                            ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      _buildRegimenSelector(),
-                      const SizedBox(height: 12),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          _regimenSummaryText(),
-                          style: const TextStyle(height: 1.35),
-                        ),
-                      ),
-                      if (_regimenMode == 'custom') ...[
-                        const SizedBox(height: 24),
-                        const Text(
-                          'Custom Reminder Time',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: _isSaving ? null : _pickTime,
-                            child: Text(timeText),
-                          ),
-                        ),
-                      ],
-                    ],
-
-                    if (widget.isEditMode) ...[
-                      const Text(
-                        'Reminder Time',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _isSaving ? null : _pickTime,
-                          child: Text(timeText),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      DropdownButtonFormField<String>(
-                        initialValue: _slotLabel,
-                        decoration: InputDecoration(
-                          labelText: 'Slot Label',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        items: _slotItems,
-                        onChanged: _isSaving
-                            ? null
-                            : (value) {
-                                if (value == null) return;
-                                setState(() {
-                                  _slotLabel = value;
-                                });
-                              },
                       ),
                       const SizedBox(height: 16),
-                      Row(
+                    ],
+
+                    _SectionCard(
+                      title: widget.isEditMode ? 'Timing' : 'Repeat',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: _quantityController,
-                              keyboardType: const TextInputType.numberWithOptions(
-                                decimal: true,
-                              ),
-                              enabled: !_isSaving,
-                              decoration: InputDecoration(
-                                labelText: 'Quantity Per Dose',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
+                          if (widget.isEditMode || _regimenMode == 'custom') ...[
+                            const Text(
+                              'Reminder Time',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              initialValue: _selectedQuantityUnit,
-                              decoration: InputDecoration(
-                                labelText: 'Unit',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: _isSaving ? null : _pickTime,
+                                icon: const Icon(Icons.access_time),
+                                label: Text(timeText),
                               ),
-                              items: _quantityUnitItems,
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                          const Text(
+                            'Repeat Type',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          _buildRepeatTypeSelector(),
+                          if (_repeatType == 'selected_days') ...[
+                            const SizedBox(height: 18),
+                            const Text(
+                              'Select Days',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _buildDayChip('mon', 'Mon'),
+                                _buildDayChip('tue', 'Tue'),
+                                _buildDayChip('wed', 'Wed'),
+                                _buildDayChip('thu', 'Thu'),
+                                _buildDayChip('fri', 'Fri'),
+                                _buildDayChip('sat', 'Sat'),
+                                _buildDayChip('sun', 'Sun'),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+
+                    if (widget.isEditMode) ...[
+                      const SizedBox(height: 16),
+                      _SectionCard(
+                        title: 'Dose and Schedule Details',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            DropdownButtonFormField<String>(
+                              initialValue: _slotLabel,
+                              decoration: _inputDecoration('Slot Label'),
+                              items: _slotItems,
                               onChanged: _isSaving
                                   ? null
                                   : (value) {
                                       if (value == null) return;
                                       setState(() {
-                                        _selectedQuantityUnit = value;
+                                        _slotLabel = value;
                                       });
                                     },
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        initialValue: _selectedAnnouncementLanguage,
-                        decoration: InputDecoration(
-                          labelText: 'Announcement Language',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
+                            const SizedBox(height: 14),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _quantityController,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                    enabled: !_isSaving,
+                                    decoration:
+                                        _inputDecoration('Quantity Per Dose'),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: DropdownButtonFormField<String>(
+                                    initialValue: _selectedQuantityUnit,
+                                    decoration: _inputDecoration('Unit'),
+                                    items: _quantityUnitItems,
+                                    onChanged: _isSaving
+                                        ? null
+                                        : (value) {
+                                            if (value == null) return;
+                                            setState(() {
+                                              _selectedQuantityUnit = value;
+                                            });
+                                          },
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            DropdownButtonFormField<String>(
+                              initialValue: _selectedAnnouncementLanguage,
+                              decoration:
+                                  _inputDecoration('Announcement Language'),
+                              items: _languageItems,
+                              onChanged: _isSaving
+                                  ? null
+                                  : (value) {
+                                      if (value == null) return;
+                                      setState(() {
+                                        _selectedAnnouncementLanguage = value;
+                                      });
+                                    },
+                            ),
+                            const SizedBox(height: 8),
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text(
+                                'Schedule Enabled',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              subtitle: const Text(
+                                'Turn this off to keep the row saved but inactive.',
+                              ),
+                              value: _isEnabled,
+                              onChanged: _isSaving
+                                  ? null
+                                  : (value) {
+                                      setState(() {
+                                        _isEnabled = value;
+                                      });
+                                    },
+                            ),
+                          ],
                         ),
-                        items: _languageItems,
-                        onChanged: _isSaving
-                            ? null
-                            : (value) {
-                                if (value == null) return;
-                                setState(() {
-                                  _selectedAnnouncementLanguage = value;
-                                });
-                              },
-                      ),
-                      const SizedBox(height: 8),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text(
-                          'Schedule Enabled',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        value: _isEnabled,
-                        onChanged: _isSaving
-                            ? null
-                            : (value) {
-                                setState(() {
-                                  _isEnabled = value;
-                                });
-                              },
                       ),
                     ],
 
                     const SizedBox(height: 24),
-                    const Text(
-                      'Repeat Type',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _buildRepeatTypeSelector(),
-                    if (_repeatType == 'selected_days') ...[
-                      const SizedBox(height: 20),
-                      const Text(
-                        'Select Days',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _buildDayChip('mon', 'Mon'),
-                          _buildDayChip('tue', 'Tue'),
-                          _buildDayChip('wed', 'Wed'),
-                          _buildDayChip('thu', 'Thu'),
-                          _buildDayChip('fri', 'Fri'),
-                          _buildDayChip('sat', 'Sat'),
-                          _buildDayChip('sun', 'Sun'),
-                        ],
-                      ),
-                    ],
-                    const SizedBox(height: 30),
                     if (_isSaving)
                       Container(
                         width: double.infinity,
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                          color:
+                              Theme.of(context).colorScheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
@@ -727,40 +786,221 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
                       ),
                     SizedBox(
                       width: double.infinity,
-                      child: ElevatedButton(
+                      child: ElevatedButton.icon(
                         onPressed: _isSaving ? null : _saveSchedule,
-                        child: _isSaving
-                            ? Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Text(
-                                      widget.isEditMode
-                                          ? 'Updating schedule...'
-                                          : 'Saving schedule...',
-                                    ),
-                                  ],
-                                ),
+                        icon: _isSaving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
                               )
-                            : Text(
-                                widget.isEditMode
-                                    ? 'Update Schedule'
-                                    : 'Save Schedule',
-                              ),
+                            : Icon(widget.isEditMode
+                                ? Icons.save_rounded
+                                : Icons.add_alarm_rounded),
+                        label: Text(
+                          _isSaving
+                              ? (widget.isEditMode
+                                  ? 'Updating schedule...'
+                                  : 'Saving schedule...')
+                              : (widget.isEditMode
+                                  ? 'Update Schedule'
+                                  : 'Save Schedule'),
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String label) {
+    return InputDecoration(
+      labelText: label,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
+    );
+  }
+}
+
+class _HeroHeader extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final String doseLabel;
+
+  const _HeroHeader({
+    required this.title,
+    required this.subtitle,
+    required this.doseLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            theme.colorScheme.primaryContainer,
+            theme.colorScheme.surfaceContainerHighest,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              height: 1.1,
+            ),
+          ),
+          if (doseLabel.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              doseLabel,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              fontSize: 15,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  final String title;
+  final Widget child;
+
+  const _SectionCard({
+    required this.title,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant,
+        ),
+        boxShadow: [
+          BoxShadow(
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+            color: Colors.black.withValues(alpha: 0.03),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 14),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryPanel extends StatelessWidget {
+  final String text;
+
+  const _SummaryPanel({
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 15,
+          height: 1.5,
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoPanel extends StatelessWidget {
+  final String title;
+  final String body;
+
+  const _InfoPanel({
+    required this.title,
+    required this.body,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            body,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -776,4 +1016,9 @@ class _RegimenSlot {
     required this.slotLabel,
     required this.sortOrder,
   });
+}
+
+String _titleCase(String value) {
+  if (value.isEmpty) return value;
+  return value[0].toUpperCase() + value.substring(1);
 }

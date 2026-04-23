@@ -185,6 +185,16 @@ class DoseEventService {
     });
   }
 
+  Future<void> updateRemarks({
+    required String eventId,
+    required String remarks,
+  }) async {
+    await _eventCollection.doc(eventId).update({
+      'remarks': remarks.trim(),
+      'updated_at': FieldValue.serverTimestamp(),
+    });
+  }
+
   Future<void> snoozeEvent({
     required String eventId,
     required int minutes,

@@ -77,7 +77,6 @@ class ScheduleService {
     });
   }
 
-  // 🔥 NEW — full edit
   Future<void> updateScheduleEntry({
     required String scheduleId,
     required String timeOfDay,
@@ -100,12 +99,10 @@ class ScheduleService {
     });
   }
 
-  // 🔥 NEW — delete single row
   Future<void> deleteScheduleEntry(String scheduleId) async {
     await scheduleCollection.doc(scheduleId).delete();
   }
 
-  // 🔥 NEW — delete full regimen
   Future<void> deleteRegimenGroup(String regimenGroupId) async {
     final snapshot = await scheduleCollection
         .where('regimen_group_id', isEqualTo: regimenGroupId)
@@ -118,6 +115,64 @@ class ScheduleService {
     }
 
     await batch.commit();
+  }
+
+  Future<int> disableSchedulesForMedicine(String medicineId) async {
+    final snapshot = await scheduleCollection
+        .where('medicine_id', isEqualTo: medicineId)
+        .where('is_enabled', isEqualTo: true)
+        .get();
+
+    if (snapshot.docs.isEmpty) return 0;
+
+    final batch = _firestore.batch();
+
+    for (final doc in snapshot.docs) {
+      batch.update(doc.reference, {
+        'is_enabled': false,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
+
+    return snapshot.docs.length;
+  }
+
+  Future<int> countSchedulesForMedicine(String medicineId) async {
+    final snapshot = await scheduleCollection
+        .where('medicine_id', isEqualTo: medicineId)
+        .get();
+
+    return snapshot.docs.length;
+  }
+
+  Future<int> countEnabledSchedulesForMedicine(String medicineId) async {
+    final snapshot = await scheduleCollection
+        .where('medicine_id', isEqualTo: medicineId)
+        .where('is_enabled', isEqualTo: true)
+        .get();
+
+    return snapshot.docs.length;
+  }
+
+  Future<bool> hasSchedulesForMedicine(String medicineId) async {
+    final snapshot = await scheduleCollection
+        .where('medicine_id', isEqualTo: medicineId)
+        .limit(1)
+        .get();
+
+    return snapshot.docs.isNotEmpty;
+  }
+
+  Future<bool> hasEnabledSchedulesForMedicine(String medicineId) async {
+    final snapshot = await scheduleCollection
+        .where('medicine_id', isEqualTo: medicineId)
+        .where('is_enabled', isEqualTo: true)
+        .limit(1)
+        .get();
+
+    return snapshot.docs.isNotEmpty;
   }
 
   Future<List<ScheduleEntryModel>> fetchEnabledSchedules() async {

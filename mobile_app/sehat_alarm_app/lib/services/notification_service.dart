@@ -129,20 +129,21 @@ class NotificationService {
 
     final settings = await _appSettingsService.getSettings();
     final zonedTime = tz.TZDateTime.from(scheduleAt, tz.local);
+    final profile = _normalizedProfile(settings.alarmStrengthProfile);
 
     final androidDetails = AndroidNotificationDetails(
       _channelId,
       _channelName,
       channelDescription: _channelDescription,
-      importance: Importance.max,
-      priority: Priority.max,
+      importance: _importanceForProfile(profile),
+      priority: _priorityForProfile(profile),
       category: AndroidNotificationCategory.alarm,
       playSound: true,
       enableVibration: settings.vibrationEnabled,
       ticker: 'Sehat Alarm',
-      ongoing: true,
+      ongoing: profile != 'gentle',
       autoCancel: false,
-      fullScreenIntent: true,
+      fullScreenIntent: profile == 'strong',
       visibility: NotificationVisibility.public,
     );
 
@@ -154,8 +155,15 @@ class NotificationService {
 
     await _plugin.zonedSchedule(
       _notificationIdForEvent(event.id),
-      medicineName ?? 'Medicine Reminder',
-      _notificationBodyForEvent(event),
+      _notificationTitleForEvent(
+        event,
+        medicineName: medicineName,
+        profile: profile,
+      ),
+      _notificationBodyForEvent(
+        event,
+        profile: profile,
+      ),
       zonedTime,
       NotificationDetails(android: androidDetails),
       payload: payload,
@@ -192,31 +200,164 @@ class NotificationService {
     }
   }
 
-  String _notificationBodyForEvent(DoseEventModel event) {
-    final quantity = event.quantityPerDoseSnapshot;
-    final unit = event.quantityUnitSnapshot.trim();
-    final slot = event.slotLabelSnapshot.trim();
+  String _notificationTitleForEvent(
+    DoseEventModel event, {
+    String? medicineName,
+    required String profile,
+  }) {
+    final resolvedMedicineName = (medicineName?.trim().isNotEmpty == true
+            ? medicineName!.trim()
+            : event.medicineNameSnapshot.trim().isNotEmpty
+                ? event.medicineNameSnapshot.trim()
+                : 'Medicine')
+        .trim();
 
+    if (event.status == 'snoozed' || event.snoozeUntil != null) {
+      switch (profile) {
+        case 'gentle':
+          return 'Gentle Reminder — $resolvedMedicineName';
+        case 'strong':
+          return 'Urgent Reminder — $resolvedMedicineName';
+        case 'standard':
+        default:
+          return 'Snoozed Reminder — $resolvedMedicineName';
+      }
+    }
+
+    switch (profile) {
+      case 'gentle':
+        return 'Reminder — $resolvedMedicineName';
+      case 'strong':
+        return 'Take $resolvedMedicineName Now';
+      case 'standard':
+      default:
+        return 'Take $resolvedMedicineName';
+    }
+  }
+
+  String _notificationBodyForEvent(
+    DoseEventModel event, {
+    required String profile,
+  }) {
     final parts = <String>[];
 
+    final quantity = event.quantityPerDoseSnapshot;
+    final unit = event.quantityUnitSnapshot.trim();
     if (quantity != null) {
       final quantityText = quantity == quantity.roundToDouble()
           ? quantity.toInt().toString()
           : quantity.toString();
-      parts.add(
-        unit.isEmpty ? quantityText : '$quantityText $unit',
-      );
+
+      parts.add(unit.isEmpty ? quantityText : '$quantityText $unit');
     }
 
+    final slot = event.slotLabelSnapshot.trim();
     if (slot.isNotEmpty) {
-      parts.add(slot);
+      parts.add(_slotLabel(slot));
     }
 
-    if (parts.isEmpty) {
-      return 'It is time to take your medicine now.';
+    final dueText = _timeText(event.snoozeUntil ?? event.scheduledDateTime);
+    if (dueText.isNotEmpty) {
+      parts.add(dueText);
     }
 
-    return 'It is time to take your medicine now. ${parts.join(' • ')}';
+    final suffix = parts.isEmpty ? '' : ' • ${parts.join(' • ')}';
+
+    if (event.status == 'snoozed' || event.snoozeUntil != null) {
+      switch (profile) {
+        case 'gentle':
+          return 'Your medicine reminder is due again.$suffix';
+        case 'strong':
+          return 'Your medicine reminder needs attention now.$suffix';
+        case 'standard':
+        default:
+          return 'Reminder due again now.$suffix';
+      }
+    }
+
+    switch (profile) {
+      case 'gentle':
+        return 'It may be time to take your medicine.$suffix';
+      case 'strong':
+        return 'It is time to take your medicine now.$suffix';
+      case 'standard':
+      default:
+        return 'It is time to take your medicine now.$suffix';
+    }
+  }
+
+  String _slotLabel(String slot) {
+    switch (slot.trim()) {
+      case 'morning':
+        return 'Morning';
+      case 'afternoon':
+        return 'Afternoon';
+      case 'night':
+        return 'Night';
+      case 'custom':
+        return 'Custom';
+      default:
+        return slot.isEmpty
+            ? ''
+            : slot[0].toUpperCase() + slot.substring(1);
+    }
+  }
+
+  String _timeText(DateTime? dateTime) {
+    if (dateTime == null) return '';
+
+    final hour = dateTime.hour;
+    final minute = dateTime.minute;
+
+    final hour12 = hour == 0
+        ? 12
+        : hour > 12
+            ? hour - 12
+            : hour;
+    final amPm = hour >= 12 ? 'PM' : 'AM';
+    final minuteText = minute.toString().padLeft(2, '0');
+
+    return 'At $hour12:$minuteText $amPm';
+  }
+
+  String _normalizedProfile(String raw) {
+    switch (raw.trim().toLowerCase()) {
+      case 'gentle':
+        return 'gentle';
+      case 'strong':
+        return 'strong';
+      case 'normal':
+        return 'gentle';
+      case 'very_strong':
+        return 'strong';
+      case 'standard':
+      default:
+        return 'standard';
+    }
+  }
+
+  Importance _importanceForProfile(String profile) {
+    switch (profile) {
+      case 'gentle':
+        return Importance.high;
+      case 'strong':
+        return Importance.max;
+      case 'standard':
+      default:
+        return Importance.max;
+    }
+  }
+
+  Priority _priorityForProfile(String profile) {
+    switch (profile) {
+      case 'gentle':
+        return Priority.high;
+      case 'strong':
+        return Priority.max;
+      case 'standard':
+      default:
+        return Priority.max;
+    }
   }
 
   Future<void> _configureLocalTimeZone() async {

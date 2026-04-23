@@ -152,8 +152,7 @@ class _AlarmAlertScreenState extends State<AlarmAlertScreen>
     _cancelRetryGuard();
     _retryCount = 0;
 
-    final repeatSeconds =
-        _settings?.repeatIntervalSeconds ?? 20;
+    final repeatSeconds = _settings?.repeatIntervalSeconds ?? 20;
 
     _autoRetryTimer = Timer.periodic(
       Duration(seconds: repeatSeconds),
@@ -189,7 +188,7 @@ class _AlarmAlertScreenState extends State<AlarmAlertScreen>
             scheduledAt: refreshed.snoozeUntil ?? refreshed.scheduledDateTime,
           );
         } catch (_) {
-          // Keep alarm screen alive; retry guard should not crash the screen.
+          // Keep alarm screen alive.
         }
       },
     );
@@ -419,9 +418,170 @@ class _AlarmAlertScreenState extends State<AlarmAlertScreen>
     }
   }
 
+  DateTime? _effectiveTime() {
+    return _event?.snoozeUntil ?? _event?.scheduledDateTime;
+  }
+
+  bool _isOverdue() {
+    final effectiveTime = _effectiveTime();
+    if (effectiveTime == null) return false;
+    return DateTime.now().isAfter(effectiveTime);
+  }
+
+  String _profile() {
+    final raw = _settings?.alarmStrengthProfile.trim().toLowerCase() ?? 'standard';
+    switch (raw) {
+      case 'gentle':
+        return 'gentle';
+      case 'strong':
+        return 'strong';
+      case 'normal':
+        return 'gentle';
+      case 'very_strong':
+        return 'strong';
+      case 'standard':
+      default:
+        return 'standard';
+    }
+  }
+
+  String _headlineText() {
+    final status = _event?.status ?? 'pending';
+    final profile = _profile();
+
+    if (status == 'snoozed') {
+      return profile == 'strong'
+          ? 'SNOOZED — RESPONSE NEEDED SOON'
+          : 'REMINDER SNOOZED';
+    }
+
+    if (_isOverdue()) {
+      return profile == 'gentle'
+          ? 'DOSE OVERDUE'
+          : 'MISSED DOSE — ACT NOW';
+    }
+
+    if (status == 'ringing') {
+      switch (profile) {
+        case 'gentle':
+          return 'MEDICINE REMINDER';
+        case 'strong':
+          return 'TIME TO TAKE MEDICINE NOW';
+        case 'standard':
+        default:
+          return 'TIME TO TAKE MEDICINE';
+      }
+    }
+
+    return 'MEDICINE REMINDER';
+  }
+
+  String _subtitleText() {
+    final status = _event?.status ?? 'pending';
+    final language = _resolvedLanguageLabel().toLowerCase();
+    final profile = _profile();
+
+    if (language == 'urdu') {
+      if (status == 'snoozed') {
+        return profile == 'strong'
+            ? 'یاددہانی ملتوی ہے، جلد جواب دیں'
+            : 'یاددہانی ملتوی کی گئی ہے';
+      }
+      if (_isOverdue()) {
+        return profile == 'gentle'
+            ? 'خوراک وقت سے پیچھے ہے'
+            : 'خوراک رہ گئی ہے — ابھی لے لیں';
+      }
+      return profile == 'gentle'
+          ? 'اپنی دوا کی یاددہانی'
+          : 'دوائی لینے کا وقت';
+    }
+
+    if (status == 'snoozed') {
+      return profile == 'strong'
+          ? 'Reminder snoozed, response needed soon'
+          : 'Reminder has been snoozed';
+    }
+    if (_isOverdue()) {
+      return profile == 'gentle'
+          ? 'Dose is now overdue'
+          : 'Dose is overdue — act now';
+    }
+    return profile == 'gentle'
+        ? 'A reminder to take your medicine'
+        : 'It is time to take your medicine';
+  }
+
+  String _dueText() {
+    final effectiveTime = _effectiveTime();
+    if (effectiveTime == null) return '';
+
+    final now = DateTime.now();
+    final difference = effectiveTime.difference(now);
+
+    if (difference.inSeconds >= 0) {
+      final minutes = difference.inMinutes;
+      if (minutes < 1) return 'Due now';
+      if (minutes < 60) return 'Due in $minutes min';
+      final hours = difference.inHours;
+      final remainingMinutes = minutes % 60;
+      return remainingMinutes == 0
+          ? 'Due in $hours hr'
+          : 'Due in $hours hr $remainingMinutes min';
+    }
+
+    final overdue = now.difference(effectiveTime);
+    final minutes = overdue.inMinutes;
+    if (minutes < 1) return 'Due now';
+    if (minutes < 60) return 'Overdue by $minutes min';
+    final hours = overdue.inHours;
+    final remainingMinutes = minutes % 60;
+    return remainingMinutes == 0
+        ? 'Overdue by $hours hr'
+        : 'Overdue by $hours hr $remainingMinutes min';
+  }
+
+  Color _accentColor() {
+    final status = _event?.status ?? 'pending';
+    final profile = _profile();
+
+    if (_isOverdue()) {
+      return profile == 'gentle' ? Colors.orange.shade700 : Colors.red.shade800;
+    }
+
+    switch (status) {
+      case 'ringing':
+        if (profile == 'gentle') return Colors.blue.shade700;
+        if (profile == 'strong') return Colors.red.shade800;
+        return Colors.red.shade700;
+      case 'snoozed':
+        return Colors.orange.shade700;
+      case 'taken':
+        return Colors.green.shade700;
+      case 'skipped':
+        return Colors.grey.shade700;
+      case 'missed':
+        return Colors.red.shade900;
+      default:
+        return Colors.blue.shade700;
+    }
+  }
+
+  String _profileLabel() {
+    switch (_profile()) {
+      case 'gentle':
+        return 'Gentle';
+      case 'strong':
+        return 'Strong';
+      case 'standard':
+      default:
+        return 'Standard';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final displayTime = _event?.snoozeUntil ?? _event?.scheduledDateTime;
+    final displayTime = _effectiveTime();
     final timeLabel = displayTime == null
         ? '--:--'
         : DateFormat('hh:mm a').format(displayTime);
@@ -429,11 +589,11 @@ class _AlarmAlertScreenState extends State<AlarmAlertScreen>
     return PopScope(
       canPop: false,
       child: Scaffold(
-        backgroundColor: Colors.red.shade50,
+        backgroundColor: Colors.black,
         body: SafeArea(
           child: Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 620),
+              constraints: const BoxConstraints(maxWidth: 680),
               child: Padding(
                 padding: const EdgeInsets.all(20),
                 child: _loading
@@ -444,6 +604,8 @@ class _AlarmAlertScreenState extends State<AlarmAlertScreen>
                             onClose: _closeAlarmScreen,
                           )
                         : _AlarmCard(
+                            headline: _headlineText(),
+                            subtitle: _subtitleText(),
                             medicineName: _resolvedMedicineName(),
                             doseLabel: _resolvedDoseLabel(),
                             instructions: _resolvedInstructions(),
@@ -451,12 +613,15 @@ class _AlarmAlertScreenState extends State<AlarmAlertScreen>
                             languageLabel: _resolvedLanguageLabel(),
                             slotText: _resolvedSlotText(),
                             timeLabel: timeLabel,
+                            dueText: _dueText(),
                             status: _event?.status ?? 'pending',
                             busy: _busy,
                             busyLabel: _busyLabel,
                             retryCount: _retryCount,
                             snoozeMinutes:
                                 _settings?.defaultSnoozeMinutes ?? 10,
+                            accentColor: _accentColor(),
+                            profileLabel: _profileLabel(),
                             onTaken: _markTaken,
                             onSnooze: _snoozeDose,
                             onSkip: _skipDose,
@@ -471,6 +636,8 @@ class _AlarmAlertScreenState extends State<AlarmAlertScreen>
 }
 
 class _AlarmCard extends StatelessWidget {
+  final String headline;
+  final String subtitle;
   final String medicineName;
   final String doseLabel;
   final String instructions;
@@ -478,16 +645,21 @@ class _AlarmCard extends StatelessWidget {
   final String languageLabel;
   final String slotText;
   final String timeLabel;
+  final String dueText;
   final String status;
   final bool busy;
   final String? busyLabel;
   final int retryCount;
   final int snoozeMinutes;
+  final Color accentColor;
+  final String profileLabel;
   final VoidCallback onTaken;
   final VoidCallback onSnooze;
   final VoidCallback onSkip;
 
   const _AlarmCard({
+    required this.headline,
+    required this.subtitle,
     required this.medicineName,
     required this.doseLabel,
     required this.instructions,
@@ -495,217 +667,360 @@ class _AlarmCard extends StatelessWidget {
     required this.languageLabel,
     required this.slotText,
     required this.timeLabel,
+    required this.dueText,
     required this.status,
     required this.busy,
     required this.busyLabel,
     required this.retryCount,
     required this.snoozeMinutes,
+    required this.accentColor,
+    required this.profileLabel,
     required this.onTaken,
     required this.onSnooze,
     required this.onSkip,
   });
 
-  Color _statusColor() {
-    switch (status) {
-      case 'ringing':
-        return Colors.red;
-      case 'snoozed':
-        return Colors.orange;
-      case 'taken':
-        return Colors.green;
-      case 'skipped':
-        return Colors.grey;
-      case 'missed':
-        return Colors.deepOrange;
-      default:
-        return Colors.blue;
-    }
+  Color _statusSoftColor() {
+    return accentColor.withValues(alpha: 0.12);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Card(
-      elevation: 14,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(28),
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF121212),
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(
+          color: accentColor.withValues(alpha: 0.45),
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+            color: accentColor.withValues(alpha: 0.22),
+          ),
+        ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(24, 26, 24, 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.notifications_active,
-              size: 76,
-              color: theme.colorScheme.error,
+            Container(
+              width: 84,
+              height: 84,
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.14),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: accentColor.withValues(alpha: 0.40),
+                ),
+              ),
+              child: Icon(
+                Icons.notifications_active,
+                size: 42,
+                color: accentColor,
+              ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
+            Text(
+              headline,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: accentColor,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.6,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 22),
             Text(
               medicineName,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontSize: 30,
-                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                fontSize: 34,
+                fontWeight: FontWeight.w900,
+                height: 1.1,
               ),
             ),
             if (doseLabel.isNotEmpty) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               Text(
                 doseLabel,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontSize: 19,
-                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
-            if (quantityText.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Dose quantity: $quantityText',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
+            const SizedBox(height: 20),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+              decoration: BoxDecoration(
+                color: _statusSoftColor(),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: accentColor.withValues(alpha: 0.28),
                 ),
               ),
-            ],
-            const SizedBox(height: 16),
-            Text(
-              'Scheduled at $timeLabel',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
+              child: Column(
+                children: [
+                  Text(
+                    timeLabel,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 34,
+                      fontWeight: FontWeight.w900,
+                      height: 1.0,
+                    ),
+                  ),
+                  if (dueText.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      dueText,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: accentColor,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-            if (slotText.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                slotText,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             Wrap(
               alignment: WrapAlignment.center,
               spacing: 10,
               runSpacing: 10,
               children: [
-                Chip(
-                  label: Text(
-                    status.toUpperCase(),
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  backgroundColor: _statusColor().withValues(alpha: 0.14),
-                  side: BorderSide(
-                    color: _statusColor().withValues(alpha: 0.28),
-                  ),
+                _InfoBadge(
+                  label: status.toUpperCase(),
+                  foregroundColor: accentColor,
+                  backgroundColor: accentColor.withValues(alpha: 0.12),
                 ),
-                Chip(
-                  label: Text(
-                    'Language: $languageLabel',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                if (slotText.isNotEmpty)
+                  _InfoBadge(
+                    label: slotText,
+                    foregroundColor: Colors.white,
+                    backgroundColor: Colors.white10,
                   ),
+                _InfoBadge(
+                  label: 'Language: $languageLabel',
+                  foregroundColor: Colors.white,
+                  backgroundColor: Colors.white10,
+                ),
+                _InfoBadge(
+                  label: 'Profile: $profileLabel',
+                  foregroundColor: Colors.white,
+                  backgroundColor: Colors.white10,
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            if (quantityText.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _DetailPanel(
+                title: 'Dose Quantity',
+                body: quantityText,
+              ),
+            ],
+            if (instructions.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _DetailPanel(
+                title: 'Instructions',
+                body: instructions,
+              ),
+            ],
+            const SizedBox(height: 12),
             Text(
               'Alert cycle: ${retryCount + 1}',
               style: TextStyle(
-                fontSize: 14,
                 color: theme.colorScheme.onSurface.withValues(alpha: 0.70),
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            if (instructions.isNotEmpty) ...[
-              const SizedBox(height: 20),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  color: Colors.grey.shade100,
-                ),
-                child: Text(
-                  instructions,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 16),
-                ),
-              ),
-            ],
             if (busy && busyLabel != null) ...[
               const SizedBox(height: 18),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.white10,
+                  borderRadius: BorderRadius.circular(14),
                 ),
                 child: Text(
                   busyLabel!,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
-            const SizedBox(height: 28),
+            const SizedBox(height: 26),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.green.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  textStyle: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                ),
                 onPressed: busy ? null : onTaken,
                 icon: busy
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     : const Icon(Icons.check_circle),
-                label: const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 14),
-                  child: Text(
-                    'Taken',
-                    style: TextStyle(fontSize: 18),
-                  ),
-                ),
+                label: const Text('TAKE NOW'),
               ),
             ),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: accentColor.withValues(alpha: 0.60)),
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  textStyle: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                ),
                 onPressed: busy ? null : onSnooze,
                 icon: const Icon(Icons.snooze),
-                label: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  child: Text(
-                    'Snooze $snoozeMinutes Minutes',
-                    style: const TextStyle(fontSize: 18),
-                  ),
-                ),
+                label: Text('SNOOZE $snoozeMinutes MIN'),
               ),
             ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: TextButton.icon(
-                onPressed: busy ? null : onSkip,
-                icon: const Icon(Icons.close),
-                label: const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 14),
-                  child: Text(
-                    'Skip',
-                    style: TextStyle(fontSize: 18),
-                  ),
+            const SizedBox(height: 10),
+            TextButton.icon(
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white70,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                textStyle: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
+              onPressed: busy ? null : onSkip,
+              icon: const Icon(Icons.close),
+              label: const Text('SKIP'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailPanel extends StatelessWidget {
+  final String title;
+  final String body;
+
+  const _DetailPanel({
+    required this.title,
+    required this.body,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white10,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            body,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              height: 1.35,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoBadge extends StatelessWidget {
+  final String label;
+  final Color foregroundColor;
+  final Color backgroundColor;
+
+  const _InfoBadge({
+    required this.label,
+    required this.foregroundColor,
+    required this.backgroundColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: foregroundColor,
+          fontWeight: FontWeight.w800,
+          fontSize: 13,
         ),
       ),
     );
@@ -723,21 +1038,26 @@ class _ErrorCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: Colors.white12),
       ),
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, size: 56),
+            const Icon(Icons.error_outline, size: 56, color: Colors.white),
             const SizedBox(height: 16),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 18),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+              ),
             ),
             const SizedBox(height: 20),
             FilledButton(

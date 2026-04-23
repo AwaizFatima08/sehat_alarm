@@ -11,6 +11,8 @@ class AppSettingsModel {
   final int maxAlarmDurationMinutes;
   final int defaultSnoozeMinutes;
 
+  final String supportMode;
+
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -23,6 +25,7 @@ class AppSettingsModel {
     required this.repeatIntervalSeconds,
     required this.maxAlarmDurationMinutes,
     required this.defaultSnoozeMinutes,
+    required this.supportMode,
     this.createdAt,
     this.updatedAt,
   });
@@ -56,6 +59,9 @@ class AppSettingsModel {
         data['default_snooze_minutes'],
         fallback: 10,
       ),
+      supportMode: _normalizedSupportMode(
+        data['support_mode'],
+      ),
       createdAt: (data['created_at'] as Timestamp?)?.toDate(),
       updatedAt: (data['updated_at'] as Timestamp?)?.toDate(),
     );
@@ -70,6 +76,7 @@ class AppSettingsModel {
       'repeat_interval_seconds': repeatIntervalSeconds,
       'max_alarm_duration_minutes': maxAlarmDurationMinutes,
       'default_snooze_minutes': defaultSnoozeMinutes,
+      'support_mode': supportMode,
       'created_at': createdAt != null
           ? Timestamp.fromDate(createdAt!)
           : FieldValue.serverTimestamp(),
@@ -86,6 +93,7 @@ class AppSettingsModel {
     int? repeatIntervalSeconds,
     int? maxAlarmDurationMinutes,
     int? defaultSnoozeMinutes,
+    String? supportMode,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -104,20 +112,38 @@ class AppSettingsModel {
           maxAlarmDurationMinutes ?? this.maxAlarmDurationMinutes,
       defaultSnoozeMinutes:
           defaultSnoozeMinutes ?? this.defaultSnoozeMinutes,
+      supportMode: supportMode ?? this.supportMode,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
   static String _normalizedAlarmStrength(dynamic raw) {
-    final value = (raw ?? 'strong').toString().trim().toLowerCase();
+    final value = (raw ?? 'standard').toString().trim().toLowerCase();
+
     switch (value) {
-      case 'normal':
+      case 'gentle':
+      case 'standard':
       case 'strong':
+        return value;
+      case 'normal':
+        return 'gentle';
       case 'very_strong':
+        return 'strong';
+      default:
+        return 'standard';
+    }
+  }
+
+  static String _normalizedSupportMode(dynamic raw) {
+    final value = (raw ?? 'patient').toString().trim().toLowerCase();
+
+    switch (value) {
+      case 'patient':
+      case 'caregiver':
         return value;
       default:
-        return 'strong';
+        return 'patient';
     }
   }
 

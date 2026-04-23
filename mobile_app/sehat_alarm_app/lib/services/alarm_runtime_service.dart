@@ -201,7 +201,7 @@ class AlarmRuntimeService {
       );
 
       if (urduSuccess && _active) {
-        await Future<void>.delayed(const Duration(milliseconds: 450));
+        await Future<void>.delayed(profile.bilingualPause);
       }
 
       if (_active) {
@@ -225,7 +225,7 @@ class AlarmRuntimeService {
     );
 
     if (_active) {
-      await Future<void>.delayed(const Duration(milliseconds: 450));
+      await Future<void>.delayed(profile.bilingualPause);
     }
 
     if (_active) {
@@ -268,11 +268,12 @@ class AlarmRuntimeService {
         id: 'global',
         defaultAnnouncementLanguage: 'english',
         bilingualAnnouncements: false,
-        alarmStrengthProfile: 'strong',
+        alarmStrengthProfile: 'standard',
         vibrationEnabled: true,
         repeatIntervalSeconds: 20,
         maxAlarmDurationMinutes: 5,
         defaultSnoozeMinutes: 10,
+        supportMode: 'patient',
         createdAt: null,
         updatedAt: null,
       );
@@ -281,27 +282,42 @@ class AlarmRuntimeService {
 
   _AlarmSpeechProfile _resolvedProfile(String profile) {
     switch (profile.trim().toLowerCase()) {
-      case 'normal':
+      case 'gentle':
         return const _AlarmSpeechProfile(
-          englishSpeechRate: 0.47,
-          urduSpeechRate: 0.44,
-          volume: 0.90,
-          pitch: 1.0,
+          englishSpeechRate: 0.50,
+          urduSpeechRate: 0.47,
+          volume: 0.82,
+          pitch: 1.00,
+          bilingualPause: Duration(milliseconds: 550),
+          urgencyPhraseEnglish: 'Please take your medicine when you can.',
+          urgencyPhraseUrdu: 'براہِ کرم مناسب وقت پر اپنی دوا لے لیں۔',
+          reminderAgainEnglish: 'Gentle reminder.',
+          reminderAgainUrdu: 'نرم یاددہانی۔',
         );
-      case 'very_strong':
+      case 'strong':
         return const _AlarmSpeechProfile(
           englishSpeechRate: 0.40,
           urduSpeechRate: 0.38,
           volume: 1.0,
           pitch: 1.02,
+          bilingualPause: Duration(milliseconds: 350),
+          urgencyPhraseEnglish: 'Please respond now.',
+          urgencyPhraseUrdu: 'براہِ کرم ابھی جواب دیں۔',
+          reminderAgainEnglish: 'Strong reminder again.',
+          reminderAgainUrdu: 'دوبارہ سخت یاددہانی۔',
         );
-      case 'strong':
+      case 'standard':
       default:
         return const _AlarmSpeechProfile(
-          englishSpeechRate: 0.44,
-          urduSpeechRate: 0.41,
-          volume: 1.0,
+          englishSpeechRate: 0.45,
+          urduSpeechRate: 0.42,
+          volume: 0.92,
           pitch: 1.0,
+          bilingualPause: Duration(milliseconds: 450),
+          urgencyPhraseEnglish: 'Please respond now.',
+          urgencyPhraseUrdu: 'براہِ کرم ابھی جواب دیں۔',
+          reminderAgainEnglish: 'Reminder again.',
+          reminderAgainUrdu: 'دوبارہ یاددہانی۔',
         );
     }
   }
@@ -319,7 +335,7 @@ class AlarmRuntimeService {
     if (isFirstCycle) {
       base.write('Medicine reminder. ');
     } else {
-      base.write('Reminder again. ');
+      base.write('${profile.reminderAgainEnglish} ');
     }
 
     base.write('It is time to take $medicineName');
@@ -334,10 +350,7 @@ class AlarmRuntimeService {
       base.write('Instructions: $instructions. ');
     }
 
-    if (profile.volume >= 1.0) {
-      base.write('Please respond now. ');
-    }
-
+    base.write('${profile.urgencyPhraseEnglish} ');
     base.write('Please choose taken, snooze, or skip.');
 
     return base.toString();
@@ -356,7 +369,7 @@ class AlarmRuntimeService {
     if (isFirstCycle) {
       base.write('دوائی یاددہانی۔ ');
     } else {
-      base.write('دوبارہ یاددہانی۔ ');
+      base.write('${profile.reminderAgainUrdu} ');
     }
 
     base.write('$medicineName لینے کا وقت ہو گیا ہے');
@@ -371,10 +384,7 @@ class AlarmRuntimeService {
       base.write('ہدایت: $instructions۔ ');
     }
 
-    if (profile.volume >= 1.0) {
-      base.write('براہِ کرم ابھی جواب دیں۔ ');
-    }
-
+    base.write('${profile.urgencyPhraseUrdu} ');
     base.write('براہِ کرم Taken، Snooze، یا Skip منتخب کریں۔');
 
     return base.toString();
@@ -421,11 +431,21 @@ class _AlarmSpeechProfile {
   final double urduSpeechRate;
   final double volume;
   final double pitch;
+  final Duration bilingualPause;
+  final String urgencyPhraseEnglish;
+  final String urgencyPhraseUrdu;
+  final String reminderAgainEnglish;
+  final String reminderAgainUrdu;
 
   const _AlarmSpeechProfile({
     required this.englishSpeechRate,
     required this.urduSpeechRate,
     required this.volume,
     required this.pitch,
+    required this.bilingualPause,
+    required this.urgencyPhraseEnglish,
+    required this.urgencyPhraseUrdu,
+    required this.reminderAgainEnglish,
+    required this.reminderAgainUrdu,
   });
 }
